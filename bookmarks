@@ -1,0 +1,97 @@
+#!/usr/bin/env python3
+
+import argparse
+import glob
+import os
+import sqlite3
+
+
+class BookmarkPrinter:
+    """Read and print bookmarks from a Firefox places.sqlite file"""
+
+    def __init__(self, uri, colors=True):
+        self.conn = sqlite3.connect(uri, uri=True)
+        self.conn.row_factory = sqlite3.Row
+        self._colors = colors
+
+    def print_bookmarks(self, root=0, indentation=0):
+        with self.conn:
+            rows = self.conn.execute("""
+                    SELECT
+                        moz_bookmarks.id as id,
+                        moz_bookmarks.type as type,
+                        moz_bookmarks.title as title,
+                        moz_places.url as url
+                    FROM
+                        moz_bookmarks
+                    LEFT JOIN
+                        moz_places
+                    ON
+                        moz_bookmarks.fk = moz_places.id
+                    WHERE
+                        moz_bookmarks.parent = :parent
+                        AND moz_bookmarks.id != :parent
+                    ORDER BY
+                        moz_bookmarks.position ASC;
+                    """, { "parent": root })
+            for row in rows:
+                if row["type"] == 1:
+                    self._print_url(row, indentation)
+                elif row["type"] == 2:
+                    self._print_dir(row, indentation)
+                elif row["type"] == 3:
+                    self._print_sep(row, indentation)
+                else:
+                    raise ValueError("unknown bookmark type {}".format(row["type"]))
+                # Recurse
+                self.print_bookmarks(row["id"], indentation=indentation+1)
+
+    def _print_url(self, row, indentation):
+        indent = self._make_indent(indentation)
+        print(indent, row["title"])
+        print(indent, self._colorize(row["url"], "2"))
+
+    def _print_dir(self, row, indentation):
+        indent = self._make_indent(indentation)
+        print(indent, self._colorize(row["title"], "1"))
+
+    def _print_sep(self, row, indentation):
+        indent = self._make_indent(indentation)
+        print(indent, self._colorize("-----", "1"))
+
+    def _make_indent(self, indentation):
+        return self._colorize("| " * (indentation - 1) + "|", "2")
+
+    def close_connection(self):
+        self.conn.close()
+
+    def _colorize(self, text, color):
+        return "\33[" + color + "m" + text + "\33[0m" if self._colors else text
+        
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument("-i", "--ignore-lock", action="store_true")
+parser.add_argument("-t", "--text-only", action="store_true")
+parser.add_argument("profile", nargs="?", type=str, default="*.default")
+
+
+if __name__ == "__main__":
+
+    args = parser.parse_args()
+
+    profile = args.profile
+    if "/" not in profile:
+        profile = os.path.join("~/.mozilla/firefox", profile)
+    profile = os.path.expanduser(profile)
+
+    db_file = glob.glob(os.path.join(profile, "places.sqlite"))[0]
+
+    db_uri = "file:" + db_file + "?mode=ro"
+    if args.ignore_lock:
+        db_uri += "&nolock=1"
+
+    print("profile: " + os.path.dirname(db_file))
+    printer = BookmarkPrinter(db_uri, not args.text_only)
+    printer.print_bookmarks()
+    printer.close_connection()

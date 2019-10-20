@@ -4,6 +4,7 @@ import argparse
 import glob
 import os
 import sqlite3
+import sys
 
 
 class BookmarkPrinter:
@@ -70,28 +71,62 @@ class BookmarkPrinter:
         
 
 
-parser = argparse.ArgumentParser()
-parser.add_argument("-i", "--ignore-lock", action="store_true")
-parser.add_argument("-t", "--text-only", action="store_true")
-parser.add_argument("profile", nargs="?", type=str, default="*.default")
+parser = argparse.ArgumentParser(description="""
+    Print Firefox bookmarks to the console.
+""")
+parser.add_argument("-i", "--ignore-lock", action="store_true", help="""
+    ignore any lock on the places.sqlite file by connecting to the database
+    with nolock=1 set. Because this program does not write to the database and
+    connects in read-only mode, this should not lead to any data corruption.
+    Enable at your own risk.
+""")
+parser.add_argument("-t", "--text-only", action="store_true", help="""
+    print without formatting escape characters.
+""")
+parser.add_argument("profile", nargs="?", type=str, default="*.default", help="""
+    name of the profile whose bookmarks are read. Glob wildcards as well as `~'
+    as a shortcut to the home directory can be used. If the name contains a '/'
+    it is treated as a path to the profile folder, otherwise look for
+    a matching folder in '~/.mozilla/firefox'. Relative paths can be specified
+    by prepending './'. If no profile is specified, bookmarks from the first
+    profile matching the name '*.default' are printed.
+""")
 
 
 if __name__ == "__main__":
 
     args = parser.parse_args()
 
+    # If the profile name is not specified as a path, search in the default
+    # location in the user's home directory
     profile = args.profile
     if "/" not in profile:
         profile = os.path.join("~/.mozilla/firefox", profile)
     profile = os.path.expanduser(profile)
+    try:
+        db_file = glob.glob(os.path.join(profile, "places.sqlite"))[0]
+    except IndexError:
+        print("places.sqlite not found in '{}'".format(profile))
+        sys.exit(1)
 
-    db_file = glob.glob(os.path.join(profile, "places.sqlite"))[0]
-
+    # Open database in read-only mode and disable calls to lock methods if
+    # desired by user
     db_uri = "file:" + db_file + "?mode=ro"
     if args.ignore_lock:
         db_uri += "&nolock=1"
 
     print("profile: " + os.path.dirname(db_file))
-    printer = BookmarkPrinter(db_uri, not args.text_only)
-    printer.print_bookmarks()
-    printer.close_connection()
+    try:
+        printer = BookmarkPrinter(db_uri, not args.text_only)
+        printer.print_bookmarks()
+    except sqlite3.OperationalError as e:
+        msg = str(e)
+        if "locked" in msg:
+            print("Error: Bookmarks cannot be read because database is locked.")
+            print("The -i flag can be used to ignore the lock. Consult the help for more information.")
+            sys.exit(1)
+        else:
+            raise
+    finally:
+        printer.close_connection()
+

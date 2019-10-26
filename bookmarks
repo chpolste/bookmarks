@@ -67,7 +67,7 @@ class BookmarkPrinter:
         self.conn.close()
 
     def _colorize(self, text, color):
-        return "\33[" + color + "m" + text + "\33[0m" if self._colors else text
+        return "\33[{}m{}\33[0m".format(color, text) if self._colors else text
         
 
 
@@ -111,7 +111,7 @@ if __name__ == "__main__":
 
     # Open database in read-only mode and disable calls to lock methods if
     # desired by user
-    db_uri = "file:" + db_file + "?mode=ro"
+    db_uri = "file:{}?mode=ro".format(db_file)
     if args.ignore_lock:
         db_uri += "&nolock=1"
 

@@ -50,7 +50,7 @@ class BookmarkPrinter:
     def _print_url(self, row, indentation):
         indent = self._make_indent(indentation)
         print(indent, row["title"])
-        print(indent, self._colorize(row["url"], "2"))
+        print(indent, self._colorize(row["url"], "37"))
 
     def _print_dir(self, row, indentation):
         indent = self._make_indent(indentation)
@@ -61,7 +61,7 @@ class BookmarkPrinter:
         print(indent, self._colorize("-----", "1"))
 
     def _make_indent(self, indentation):
-        return self._colorize("| " * (indentation - 1) + "|", "2")
+        return self._colorize("| " * (indentation - 1) + "|", "37")
 
     def close_connection(self):
         self.conn.close()
